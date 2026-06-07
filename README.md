@@ -1,0 +1,84 @@
+# mindmap-markmap
+
+A Claude Code skill that turns hierarchical Markdown into an **interactive SVG mind map** with [markmap.js](https://markmap.js.org/) — readable white-on-dark by default, with expand-by-level control and a search that filters the tree to matches **plus their ancestors and descendants** (so a hit always shows up in context, not floating alone). Works standalone or embedded in Streamlit.
+
+## Why this exists
+
+markmap renders a Markdown outline as a zoomable mind map, but three things need a layer on top to be genuinely usable:
+
+- **Visibility** — a white font is invisible on the white default surface; the renderer paints its own dark backdrop so the map is readable everywhere, not just in a dark host.
+- **Expand control** — collapse to N levels or expand everything, without rebuilding the map.
+- **Search that keeps context** — filtering to just the matching nodes loses the path that explains *where* a hit lives; this keeps ancestors and the matched subtree.
+
+## Features
+
+- One function to a self-contained HTML document (`build_html`) — no build step, no bundler; markmap loads from a pinned CDN.
+- Expand-by-level (`set_expand_level`), including expand-all (`-1`).
+- Accent-insensitive, context-preserving search (`filter_markmap`).
+- HTML-safe: `<`, `>`, `&` in node text (`List<String>`, `a < b`) round-trip correctly instead of breaking the page.
+- **Zero runtime dependencies** for the core — Python standard library only. Streamlit is an optional import, used only when you embed.
+
+## Install
+
+Via the marketplace (once published):
+
+```bash
+claude plugin install mindmap-markmap@daymade-skills
+```
+
+Or manually — copy this folder into your skills directory:
+
+```bash
+cp -r mindmap-markmap ~/.claude/skills/
+```
+
+## Usage
+
+```python
+import sys; sys.path.insert(0, "scripts")
+from render_markmap import build_html, set_expand_level, filter_markmap
+
+src = open("assets/example.md", encoding="utf-8").read()
+# optional: src, n = filter_markmap(src, "branch b")   # search + keep context
+# optional: src = set_expand_level(src, -1)             # expand all
+open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
+```
+
+Inside Streamlit:
+
+```python
+import sys; sys.path.insert(0, "scripts")
+from render_markmap import render_markmap, set_expand_level
+render_markmap(set_expand_level(src, 2), height=850)
+```
+
+See [`SKILL.md`](SKILL.md) for the source format and authoring rules.
+
+## Layout
+
+```
+mindmap-markmap/
+├── SKILL.md                     # operational guide (loads when the skill triggers)
+├── scripts/render_markmap.py    # build_html / set_expand_level / filter_markmap
+├── assets/example.md            # minimal sample outline
+├── evals/                       # dependency-free regression suite + eval prompts
+└── references/
+    ├── internals.md             # how the helpers work and why
+    └── lessons.md               # real-world lessons + adversarial counter-review
+```
+
+## Tests
+
+```bash
+python evals/test_render_markmap.py
+```
+
+A dependency-free suite; every check is labeled with the bug it locks down.
+
+## Battle-tested
+
+The renderer and text transforms were hardened against a multi-agent adversarial review (12 confirmed findings, each verified by a second agent that tried to refute it). The findings — and the process — are documented in [`references/lessons.md`](references/lessons.md).
+
+## License
+
+MIT — part of [daymade/claude-code-skills](https://github.com/daymade/claude-code-skills).

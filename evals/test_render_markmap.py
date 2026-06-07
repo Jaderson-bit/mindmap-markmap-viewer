@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Regression suite for mindmap-markmap.
 
 Run from anywhere:  python evals/test_render_markmap.py

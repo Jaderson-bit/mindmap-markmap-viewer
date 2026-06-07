@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Reusable helpers to render and manipulate markmap.js mind maps from Markdown.
 

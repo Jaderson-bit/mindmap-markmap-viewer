@@ -12,7 +12,7 @@ source.md  ──►  filter / set expand level (Python)  ──►  build_html(
  (outline)        (manipulate the text)                  (HTML + CSS)        (JS in an iframe)            (screen)
 ```
 
-Helper functions live in `scripts/render_markmap.py`. A minimal source file is in `assets/example.md`. Regression tests are in `evals/`.
+Helper functions live in `scripts/render_markmap.py`; a minimal source file is in `assets/example.md`; regression tests are in `evals/`. Deeper docs: [`references/internals.md`](references/internals.md) (how the helpers work) and [`references/lessons.md`](references/lessons.md) (real-world lessons + the adversarial counter-review behind the current code).
 
 ---
 
@@ -49,7 +49,7 @@ Node text may contain `<`, `>`, and `&` freely (`a < b`, `List<String>`, even `<
 
 ## 2. Rendering (white font)
 
-The entire renderer is three things: the autoloader `<script>`, a `<div class="markmap">` holding the Markdown, and the CSS. See `build_html()` / `render_markmap()` in `render_markmap.py`.
+The entire renderer is three things: the autoloader `<script>`, a `<div class="markmap">` holding the Markdown, and the CSS. See `build_html()` / `render_markmap()` in [`scripts/render_markmap.py`](scripts/render_markmap.py), with the rationale in [`references/internals.md`](references/internals.md).
 
 Non-obvious points (these cost rework):
 - **`markmap-autoloader`** scans for every `<div class="markmap">` and renders it automatically — no JS init code needed; just drop the Markdown in the div.
