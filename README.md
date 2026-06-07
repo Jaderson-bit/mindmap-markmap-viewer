@@ -23,17 +23,9 @@ markmap renders a Markdown outline as a zoomable mind map, but three things need
 
 ## Install
 
-Via the marketplace (once published):
+Ask Claude Code to install it from this repo:
 
-```bash
-claude plugin install mindmap-markmap-viewer
-```
-
-Or manually — copy this folder into your skills directory:
-
-```bash
-cp -r mindmap-markmap-viewer ~/.claude/skills/
-```
+> Install this skill from https://github.com/Jaderson-bit/mindmap-markmap-viewer
 
 ## Usage
 
