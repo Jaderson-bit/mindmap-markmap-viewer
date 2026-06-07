@@ -13,7 +13,7 @@ markmap renders a Markdown outline as a zoomable mind map, but three things need
 ## Features
 
 - One function to a self-contained HTML bundle (`build_html`) — no build step, no bundler. The markmap stack is **vendored locally and pinned exact**, so the map **opens offline** (no CDN, no network request).
-- Built-in **navigation toolbar**: zoom in/out, fit-to-window, expand-all / collapse-all.
+- Built-in **navigation toolbar**: zoom in/out, fit-to-window, expand-all / collapse-all, and **export to SVG / PNG** (2× raster, current fold state).
 - Expand-by-level (`set_expand_level`), including expand-all (`-1`).
 - Accent-insensitive, context-preserving search (`filter_markmap`).
 - HTML-safe: `<`, `>`, `&` in node text (`List<String>`, `a < b`) round-trip correctly instead of breaking the page.

@@ -72,11 +72,72 @@ _INIT_JS = r"""
   // (our mutated fold) and just re-renders.
   function rerender() { return Promise.resolve(mm.setData()).then(function () { mm.fit(); }); }
 
+  // --- Export (US-06). SVG keeps vectors; PNG rasterizes at 2x on a dark fill.
+  // Both snapshot the CURRENT fold state (collapsed nodes stay collapsed).
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function exportBg() {
+    var bg = getComputedStyle(document.body).backgroundColor;
+    return (!bg || bg === "transparent" || bg === "rgba(0, 0, 0, 0)") ? "#0e1117" : bg;
+  }
+  function buildExportSvg() {
+    var bb = svg.querySelector("g").getBBox();            // laid-out tree, local coords
+    var pad = 20;
+    var x = Math.floor(bb.x - pad), y = Math.floor(bb.y - pad);
+    var w = Math.ceil(bb.width + pad * 2), h = Math.ceil(bb.height + pad * 2);
+    var clone = svg.cloneNode(true);
+    clone.removeAttribute("id");
+    clone.setAttribute("xmlns", SVGNS);
+    clone.setAttribute("width", w);
+    clone.setAttribute("height", h);
+    clone.setAttribute("viewBox", x + " " + y + " " + w + " " + h);
+    var cg = clone.querySelector("g");
+    if (cg) cg.removeAttribute("transform");              // map content 1:1 to viewBox
+    var rect = document.createElementNS(SVGNS, "rect");
+    rect.setAttribute("x", x); rect.setAttribute("y", y);
+    rect.setAttribute("width", w); rect.setAttribute("height", h);
+    rect.setAttribute("fill", exportBg());
+    clone.insertBefore(rect, clone.firstChild);
+    var style = document.createElementNS(SVGNS, "style");  // CSS doesn't travel -> inline it
+    style.textContent = "text{fill:#fff}foreignObject,foreignObject *{color:#fff;" +
+      "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}a{fill:#7fd1ff}code{color:#ffd479}";
+    clone.insertBefore(style, clone.firstChild);
+    return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone), w: w, h: h };
+  }
+  function download(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+  function exportSvg() {
+    var s = buildExportSvg();
+    download(new Blob([s.str], { type: "image/svg+xml;charset=utf-8" }), "mindmap.svg");
+  }
+  function exportPng() {
+    var s = buildExportSvg(), scale = 2;
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement("canvas");
+      canvas.width = s.w * scale; canvas.height = s.h * scale;
+      var ctx = canvas.getContext("2d");
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      try {
+        canvas.toBlob(function (blob) { if (blob) download(blob, "mindmap.png"); }, "image/png");
+      } catch (e) { exportSvg(); }   // foreignObject can taint the canvas -> SVG fallback
+    };
+    img.onerror = function () { exportSvg(); };
+    img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s.str);
+  }
+
   if (window.__MM_TOOLBAR__ !== false && M.Toolbar) {
     // Material "unfold_more"/"unfold_less" icons; built via Toolbar.icon (a DOM
     // node) like the built-in items -- a plain HTML string would render as text.
     var UNFOLD_MORE = "M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z";
     var UNFOLD_LESS = "M7.41 18.59L8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z";
+    var ICON_SVG = "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z";                       // download
+    var ICON_PNG = "M21 3H3v18h18V3zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z";       // image
     var tb = M.Toolbar.create(mm);
     tb.setBrand(false);
     tb.register({
@@ -87,7 +148,9 @@ _INIT_JS = r"""
       id: "collapseAll", title: "Collapse all", content: M.Toolbar.icon(UNFOLD_LESS),
       onClick: function () { (mm.state.data.children || []).forEach(function (c) { setFold(c, 1); }); rerender(); }
     });
-    tb.setItems(["zoomIn", "zoomOut", "fit", "expandAll", "collapseAll"]);
+    tb.register({ id: "downloadSvg", title: "Download SVG", content: M.Toolbar.icon(ICON_SVG), onClick: exportSvg });
+    tb.register({ id: "downloadPng", title: "Download PNG", content: M.Toolbar.icon(ICON_PNG), onClick: exportPng });
+    tb.setItems(["zoomIn", "zoomOut", "fit", "expandAll", "collapseAll", "downloadSvg", "downloadPng"]);
     var el = tb.render();
     el.style.position = "fixed";
     el.style.right = "14px";

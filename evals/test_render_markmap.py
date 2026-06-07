@@ -40,11 +40,12 @@ check("dark background by default", "background: #0e1117;" in build_html("- x"))
 check("background override to transparent",
       "background: transparent;" in build_html("- x", background="transparent"))
 offline = build_html("- x", vendor="vendor")
-check("offline: loads vendored libs locally, no CDN/network URL",
+check("offline: loads vendored libs locally, no remote src/href or CDN",
       '<script src="vendor/d3.min.js">' in offline
       and '<script src="vendor/markmap-view.min.js">' in offline
       and '<script src="vendor/markmap-lib.min.js">' in offline
-      and "http://" not in offline and "https://" not in offline)
+      and 'src="http' not in offline and 'href="http' not in offline
+      and "cdn." not in offline)  # an XML-namespace http URI is fine; a fetched URL is not
 VENDOR = os.path.join(HERE, "..", "assets", "vendor")
 check("vendored libs present on disk (pinned offline bundle)",
       all(os.path.exists(os.path.join(VENDOR, f)) for f in
@@ -53,6 +54,10 @@ check("vendored libs present on disk (pinned offline bundle)",
 check("toolbar wired by default, suppressible via toolbar=False",
       "__MM_TOOLBAR__ = true" in build_html("- x")
       and "__MM_TOOLBAR__ = false" in build_html("- x", toolbar=False))
+_doc = build_html("- x")
+check("toolbar exposes SVG + PNG export (US-06)",
+      'title: "Download SVG"' in _doc and 'title: "Download PNG"' in _doc
+      and "function exportSvg" in _doc and "function exportPng" in _doc)
 check("white-font text + foreignObject selectors present",
       "svg.markmap text { fill: #ffffff !important; }" in h and "foreignObject *" in h)
 
