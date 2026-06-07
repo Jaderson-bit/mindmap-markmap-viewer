@@ -35,6 +35,8 @@ markmap:
   - Detail                 <- level 5 (bullet indented +2 spaces)
 ```
 
+**Presets (`apply_presets`).** You don't have to hand-write the `markmap:` block — `apply_presets(src, color=None, max_width=380)` fills sensible defaults *without overriding* anything you set: `colorFreezeLevel: 2`, `maxWidth`, and an `initialExpandLevel` sized by node count (expand-all for ≤30 nodes, else level 2). Pass `color=["#7fd1ff", "#ffd479"]` for a custom palette. Any key already in your frontmatter wins, so you can set one value and let presets fill the rest.
+
 **Content rule — term → parent / description → child.** Put the label on the node and its explanation as a *child*, not on one line. Prefer:
 
 ```markdown
@@ -92,14 +94,24 @@ When there is a query, keep only nodes that **match** + their **path to the root
 
 The helpers live in `scripts/`, so put that directory on the import path first (point it at this skill's `scripts/` folder).
 
-Standalone HTML (no framework):
+Portable bundle (recommended) — writes the `.md` source of truth, the `.html`
+render, and a sibling `vendor/` so it opens offline anywhere:
 ```python
 import sys; sys.path.insert(0, "scripts")
-from render_markmap import build_html, set_expand_level, filter_markmap
+from render_markmap import write_mindmap, apply_presets, set_expand_level, filter_markmap
 
 src = open("assets/example.md", encoding="utf-8").read()
-# optional: src, n = filter_markmap(src, "branch b")
-# optional: src = set_expand_level(src, -1)
+src = apply_presets(src)                       # fill default markmap options (no override)
+# optional: src, n = filter_markmap(src, "branch b")   # search + keep context
+# optional: src = set_expand_level(src, -1)             # expand all
+write_mindmap(src, "out/mapa.html")            # -> out/mapa.md + out/mapa.html + out/vendor/
+```
+
+Just the HTML string (e.g. to embed) — `build_html(src)` defaults `vendor` to this
+skill's own `assets/vendor/` via a `file://` URI, so it opens offline on this
+machine without copying anything:
+```python
+from render_markmap import build_html
 open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
 ```
 

@@ -6,11 +6,14 @@ Each block names the adversarial-review finding(s) it locks down. Exit code is
 non-zero if any check fails, so this doubles as a CI gate.
 """
 import os
+import shutil
 import sys
+import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
-from render_markmap import build_html, set_expand_level, filter_markmap, _norm  # noqa: E402
+from render_markmap import (  # noqa: E402
+    build_html, write_mindmap, set_expand_level, apply_presets, filter_markmap, _norm)
 
 ok = True
 
@@ -84,6 +87,24 @@ twice = set_expand_level(set_expand_level("# Root", 1), 3)
 check("idempotent (one directive after re-run)",
       twice.count("initialExpandLevel") == 1 and "initialExpandLevel: 3" in twice)
 
+# ===== apply_presets: sensible defaults that never clobber author values =====
+small = apply_presets("# Root\n## A\n- x\n## B\n- y")
+check("presets: small map -> colorFreezeLevel 2 + expand-all + maxWidth, one block",
+      "colorFreezeLevel: 2" in small and "initialExpandLevel: -1" in small
+      and "maxWidth: 380" in small and fences(small) == 2)
+
+kept = apply_presets("---\nmarkmap:\n  initialExpandLevel: 1\n---\n# Root\n- a")
+check("presets: author's initialExpandLevel wins (no override)",
+      "initialExpandLevel: 1" in kept and "initialExpandLevel: -1" not in kept
+      and "colorFreezeLevel: 2" in kept and fences(kept) == 2)
+
+big = apply_presets("# Root\n" + "\n".join("- n%d" % i for i in range(40)))
+check("presets: large map (>30 nodes) -> initialExpandLevel 2", "initialExpandLevel: 2" in big)
+
+pal = apply_presets("# Root\n- a", color=["#ff0000", "#00ff00"])
+check("presets: color palette injected as a list",
+      '"#ff0000"' in pal and '"#00ff00"' in pal and "color:" in pal)
+
 # ===== filter_markmap: hierarchy =====
 filt, n = filter_markmap("# Root\n- a\n\t- b match\n", "b match")
 check("#5 tab-indented child keeps its real parent '- a'",
@@ -124,6 +145,20 @@ rendered = build_html(set_expand_level(example, 1))
 check("example.md builds a non-empty markmap document",
       '<svg id="markmap" class="markmap">' in rendered
       and 'id="markmap-source"' in rendered and "Branch A" in rendered)
+
+# ===== write_mindmap: portable .md + .html + vendor/ =====
+tmp = tempfile.mkdtemp()
+try:
+    md_p, html_p = write_mindmap("# Root\n- a\n- b", os.path.join(tmp, "mapa.html"))
+    html_text = open(html_p, encoding="utf-8").read()
+    md_text = open(md_p, encoding="utf-8").read()
+    check("write_mindmap emits .md + .html + offline vendor/ with relative refs",
+          os.path.exists(md_p) and os.path.exists(html_p)
+          and os.path.exists(os.path.join(tmp, "vendor", "d3.min.js"))
+          and '<script src="vendor/d3.min.js">' in html_text
+          and md_text == "# Root\n- a\n- b")
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
 
 print("\n=> ALL PASSED" if ok else "\n=> SOME FAILED")
 sys.exit(0 if ok else 1)

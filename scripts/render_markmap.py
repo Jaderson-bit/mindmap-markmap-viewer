@@ -3,8 +3,10 @@
 Reusable helpers to render and manipulate markmap.js mind maps from Markdown.
 
 Framework-agnostic:
-    build_html(src, height, background)     -> full HTML string (white font on dark bg)
+    build_html(src, height, background, vendor, toolbar)  -> offline HTML (white on dark)
+    write_mindmap(src, html_path)           -> write .md + .html + sibling vendor/ (portable)
     set_expand_level(src, level)            -> set initialExpandLevel in the frontmatter
+    apply_presets(src, color, max_width)    -> fill default markmap options (no override)
     filter_markmap(src, query)              -> (filtered_src, n_matches); match + ancestors + descendants
     _norm(s)                                -> accent-insensitive, lowercased string
 
@@ -14,6 +16,7 @@ Streamlit (optional):
 
 import html
 import re
+import shutil
 import unicodedata
 from pathlib import Path
 
@@ -152,19 +155,60 @@ def render_markmap(src: str, height: int = 850, background: str = "#0e1117"):
     components.html(build_html(src, height, background), height=height, scrolling=True)
 
 
-# --------------------------------------------------------------------------- #
-# Expand level
-# --------------------------------------------------------------------------- #
-def set_expand_level(src: str, level: int) -> str:
-    """Set `initialExpandLevel` in the markmap frontmatter. level = -1 expands all.
+def write_mindmap(src: str, html_path, *, height: int = 850,
+                  background: str = "#0e1117", toolbar: bool = True,
+                  copy_vendor: bool = True):
+    """Write a portable, offline mind map as a pair of files plus its libs:
 
-    Every edit is scoped to the leading `---...---` frontmatter block, so body
-    prose that merely mentions "initialExpandLevel" is never rewritten. Injection
-    happens IN PLACE; a fresh frontmatter block is prepended only when the source
-    has no frontmatter at all -- never stacked on top of an existing one (which
-    would yield two `---` blocks, of which markmap reads only the first)."""
+        <name>.md    the editable Markdown -- the single source of truth
+        <name>.html  the render (embeds the .md content at generation time)
+        vendor/      the markmap libs, copied beside the HTML so it opens offline
+
+    Returns (md_path, html_path) as Path objects. To change the map, edit the
+    `.md` and re-run -- the HTML carries no content of its own beyond what the
+    `.md` holds. The `.md` is plain Markdown (frontmatter + headings/lists), so it
+    also renders in any Markdown viewer. Set copy_vendor=False to skip copying and
+    fall back to this skill's own vendored libs via a file:// path."""
+    html_path = Path(html_path)
+    out_dir = html_path.parent
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    md_path = html_path.with_suffix(".md")
+    md_path.write_text(str(src), encoding="utf-8")
+
+    if copy_vendor:
+        bundled = Path(__file__).resolve().parent.parent / "assets" / "vendor"
+        shutil.copytree(bundled, out_dir / "vendor", dirs_exist_ok=True)
+        vendor = "vendor"  # the HTML references the copied folder relatively
+    else:
+        vendor = None  # fall back to the skill's vendor dir (absolute file:// URI)
+
+    html_path.write_text(
+        build_html(src, height=height, background=background,
+                   vendor=vendor, toolbar=toolbar),
+        encoding="utf-8")
+    return md_path, html_path
+
+
+# --------------------------------------------------------------------------- #
+# Frontmatter directives (expand level + presets)
+# --------------------------------------------------------------------------- #
+def _has_key(fm: str, key: str) -> bool:
+    """True if `key:` appears in the frontmatter (block or inline form). The
+    lookbehind stops `color` from matching inside `colorFreezeLevel`."""
+    return re.search(rf"(?<![\w-]){re.escape(key)}\s*:", fm) is not None
+
+
+def _set_markmap(src: str, key: str, value, *, override: bool) -> str:
+    """Set `key: value` inside the leading frontmatter's `markmap:` mapping.
+
+    Scoped to the frontmatter (body prose that merely mentions the key is never
+    touched) and done IN PLACE -- a second `---` block is never stacked, since
+    markmap reads only the first. With override=False the call is a no-op when
+    `key` is already present, so author-written values win over defaults;
+    override=True rewrites the existing value."""
     src = str(src)
-    directive = f"initialExpandLevel: {level}"
+    directive = f"{key}: {value}"
 
     fm_match = re.match(r"\A---\n.*?\n---\n", src, re.DOTALL)
     if not fm_match:
@@ -174,12 +218,16 @@ def set_expand_level(src: str, level: int) -> str:
     fm = fm_match.group(0)
     rest = src[fm_match.end():]
 
-    # 1) Rewrite an existing directive (the common case).
-    new_fm, n = re.subn(r"initialExpandLevel:\s*-?\d+", directive, fm)
-    if n:
+    if _has_key(fm, key):
+        if not override:
+            return src  # author already set it -> leave untouched
+        # Rewrite the existing value in place (value runs to EOL, or to ',' / '}'
+        # in an inline mapping, so sibling keys are preserved).
+        new_fm = re.sub(rf"(?<![\w-]){re.escape(key)}\s*:\s*[^\n,}}]*",
+                        directive, fm, count=1)
         return new_fm + rest
 
-    # 2) Inject under a block-style `markmap:` key, preserving its indentation.
+    # key absent -> inject under a block-style `markmap:`, preserving indentation.
     new_fm, n = re.subn(
         r"^([ \t]*)markmap:[ \t]*\n",
         rf"\g<1>markmap:\n\g<1>  {directive}\n",
@@ -188,7 +236,7 @@ def set_expand_level(src: str, level: int) -> str:
     if n:
         return new_fm + rest
 
-    # 3) Merge into an inline-mapping `markmap: { ... }` key.
+    # ... or merge into an inline-mapping `markmap: { ... }` key.
     def _merge_inline(m):
         inner = m.group(2).strip()
         body = directive + (", " + inner if inner else "")
@@ -201,10 +249,51 @@ def set_expand_level(src: str, level: int) -> str:
     if n:
         return new_fm + rest
 
-    # 4) Frontmatter exists but has no markmap: key -> insert a block just inside
-    #    the opening fence, rather than stacking a second frontmatter document.
+    # ... or, frontmatter without a markmap: key -> open a block inside the fence
+    # rather than stacking a second frontmatter document.
     new_fm = re.sub(r"\A---\n", f"---\nmarkmap:\n  {directive}\n", fm, count=1)
     return new_fm + rest
+
+
+def set_expand_level(src: str, level: int) -> str:
+    """Set `initialExpandLevel` in the markmap frontmatter. level = -1 expands all.
+    Scoped and in-place; see `_set_markmap`."""
+    return _set_markmap(src, "initialExpandLevel", level, override=True)
+
+
+def _count_nodes(src: str) -> int:
+    """Rough node count: heading + list-item lines in the body (excludes the
+    frontmatter). Used to size `initialExpandLevel` in apply_presets."""
+    src = str(src)
+    fm_match = re.match(r"\A---\n.*?\n---\n", src, re.DOTALL)
+    body = src[fm_match.end():] if fm_match else src
+    n = 0
+    for line in body.split("\n"):
+        s = line.strip()
+        if s and (s.startswith("#") or _BULLET.match(line)):
+            n += 1
+    return n
+
+
+def apply_presets(src: str, *, color=None, max_width: int = 380,
+                  expand_threshold: int = 30) -> str:
+    """Fill in sensible markmap defaults, never overriding what the author set:
+
+      - colorFreezeLevel: 2  -> each branch keeps one stable color
+      - initialExpandLevel   -> -1 (expand all) for small maps, else 2, decided by
+                                node count vs `expand_threshold`
+      - maxWidth             -> `max_width` px (wraps long labels)
+      - color                -> optional palette, a list of hex strings
+
+    Any of these keys already present in the frontmatter is left untouched."""
+    level = -1 if _count_nodes(src) <= expand_threshold else 2
+    out = _set_markmap(src, "colorFreezeLevel", 2, override=False)
+    out = _set_markmap(out, "initialExpandLevel", level, override=False)
+    out = _set_markmap(out, "maxWidth", max_width, override=False)
+    if color:
+        palette = "[" + ", ".join(f'"{c}"' for c in color) + "]"
+        out = _set_markmap(out, "color", palette, override=False)
+    return out
 
 
 # --------------------------------------------------------------------------- #
