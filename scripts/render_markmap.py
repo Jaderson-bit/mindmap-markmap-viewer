@@ -103,16 +103,18 @@ _INIT_JS = r"""
     clone.insertBefore(style, clone.firstChild);
     return { str: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone), w: w, h: h };
   }
-  function download(blob, name) {
-    var url = URL.createObjectURL(blob);
+  // Download via a data: URL, never a blob: URL. When the file is opened from
+  // file://, blob URLs carry a null origin and Chrome/Edge then IGNORE the
+  // `download` filename -- you get an extension-less file. data: URLs keep the
+  // filename in every context (file://, http://, embedded).
+  function triggerDownload(href, name) {
     var a = document.createElement("a");
-    a.href = url; a.download = name;
+    a.href = href; a.download = name; a.rel = "noopener";
     document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
   }
   function exportSvg() {
     var s = buildExportSvg();
-    download(new Blob([s.str], { type: "image/svg+xml;charset=utf-8" }), "mindmap.svg");
+    triggerDownload("data:image/svg+xml;charset=utf-8," + encodeURIComponent(s.str), "mindmap.svg");
   }
   function exportPng() {
     var s = buildExportSvg(), scale = 2;
@@ -124,7 +126,7 @@ _INIT_JS = r"""
       ctx.scale(scale, scale);
       ctx.drawImage(img, 0, 0);
       try {
-        canvas.toBlob(function (blob) { if (blob) download(blob, "mindmap.png"); }, "image/png");
+        triggerDownload(canvas.toDataURL("image/png"), "mindmap.png");
       } catch (e) { exportSvg(); }   // foreignObject can taint the canvas -> SVG fallback
     };
     img.onerror = function () { exportSvg(); };
