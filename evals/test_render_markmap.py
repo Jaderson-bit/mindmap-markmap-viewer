@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression suite for mindmap-markmap.
+"""Regression suite for mindmap-markmap-viewer.
 
 Run from anywhere:  python evals/test_render_markmap.py
 Each block names the adversarial-review finding(s) it locks down. Exit code is

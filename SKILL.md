@@ -1,5 +1,5 @@
 ---
-name: mindmap-markmap
+name: mindmap-markmap-viewer
 description: Generate and render interactive mind maps from hierarchical Markdown using markmap.js (white font, search that filters the tree to matches + ancestors + descendants, expand-by-level control). Use when the user wants to turn outline/hierarchical content into a navigable mind map, or asks for a "markmap"/"mindmap" view, optionally embedded in Streamlit.
 ---
 

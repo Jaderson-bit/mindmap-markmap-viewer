@@ -1,4 +1,4 @@
-# mindmap-markmap
+# mindmap-markmap-viewer
 
 A Claude Code skill that turns hierarchical Markdown into an **interactive SVG mind map** with [markmap.js](https://markmap.js.org/) — readable white-on-dark by default, with expand-by-level control and a search that filters the tree to matches **plus their ancestors and descendants** (so a hit always shows up in context, not floating alone). Works standalone or embedded in Streamlit.
 
@@ -23,13 +23,13 @@ markmap renders a Markdown outline as a zoomable mind map, but three things need
 Via the marketplace (once published):
 
 ```bash
-claude plugin install mindmap-markmap@daymade-skills
+claude plugin install mindmap-markmap-viewer@daymade-skills
 ```
 
 Or manually — copy this folder into your skills directory:
 
 ```bash
-cp -r mindmap-markmap ~/.claude/skills/
+cp -r mindmap-markmap-viewer ~/.claude/skills/
 ```
 
 ## Usage
@@ -57,7 +57,7 @@ See [`SKILL.md`](SKILL.md) for the source format and authoring rules.
 ## Layout
 
 ```
-mindmap-markmap/
+mindmap-markmap-viewer/
 ├── SKILL.md                     # operational guide (loads when the skill triggers)
 ├── scripts/render_markmap.py    # build_html / set_expand_level / filter_markmap
 ├── assets/example.md            # minimal sample outline

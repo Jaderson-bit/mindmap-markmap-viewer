@@ -1,5 +1,5 @@
 {
-  "skill_name": "mindmap-markmap",
+  "skill_name": "mindmap-markmap-viewer",
   "notes": "Helper correctness is locked down programmatically by test_render_markmap.py (run: python evals/test_render_markmap.py). The prompts below are realistic invocation cases for trigger/behavior review.",
   "evals": [
     {
