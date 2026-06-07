@@ -1,0 +1,120 @@
+---
+name: mindmap-markmap
+description: Generate and render interactive mind maps from hierarchical Markdown using markmap.js (white font, search that filters the tree to matches + ancestors + descendants, expand-by-level control). Use when the user wants to turn outline/hierarchical content into a navigable mind map, or asks for a "markmap"/"mindmap" view, optionally embedded in Streamlit.
+---
+
+# Mindmap (markmap) Skill
+
+Render hierarchical Markdown as an interactive SVG mind map with **markmap.js**, plus three custom layers: **white-font CSS**, **expand-by-level control**, and **search that filters the tree**.
+
+```
+source.md  ──►  filter / set expand level (Python)  ──►  build_html()  ──►  markmap-autoloader (CDN)  ──►  SVG
+ (outline)        (manipulate the text)                  (HTML + CSS)        (JS in an iframe)            (screen)
+```
+
+Helper functions live in `scripts/render_markmap.py`. A minimal source file is in `assets/example.md`. Regression tests are in `evals/`.
+
+---
+
+## 1. Source format
+
+markmap derives hierarchy from **headings (`#`)** and **nested list items** — `-`, `*`, `+`, or numbered (`1.` / `1)`) — indented by 2 spaces per level. (Tabs work too; the filter treats one tab as one level.) A YAML frontmatter block controls behavior:
+
+```markdown
+---
+markmap:
+  colorFreezeLevel: 2      # freeze color from level 2 down (branches keep the parent color)
+  initialExpandLevel: 1    # how many levels start expanded (-1 = expand everything)
+  maxWidth: 380            # max node width in px (forces wrapping)
+---
+
+# Root                     <- root (level 1)
+## Branch A                <- level 2
+### Sub-branch A1          <- level 3
+- Leaf                     <- level 4 (bullet under a level-3 heading)
+  - Detail                 <- level 5 (bullet indented +2 spaces)
+```
+
+**Content rule — term → parent / description → child.** Put the label on the node and its explanation as a *child*, not on one line. Prefer:
+
+```markdown
+- Term
+  - description of the term
+```
+over `- Term — description`. This keeps nodes short and the tree scannable.
+
+Node text may contain `<`, `>`, and `&` freely (`a < b`, `List<String>`, even `</div>`). `build_html` HTML-escapes the source before embedding it and the browser decodes it back, so markmap sees exactly what you wrote. (Earlier versions broke on a literal `<`; that footgun is gone — don't pre-escape to `&lt;` yourself or it shows up literally.)
+
+---
+
+## 2. Rendering (white font)
+
+The entire renderer is three things: the autoloader `<script>`, a `<div class="markmap">` holding the Markdown, and the CSS. See `build_html()` / `render_markmap()` in `render_markmap.py`.
+
+Non-obvious points (these cost rework):
+- **`markmap-autoloader`** scans for every `<div class="markmap">` and renders it automatically — no JS init code needed; just drop the Markdown in the div.
+- **White font is invisible without a dark background.** This is the #1 way the map "renders blank": the font is white, the surface is white, so nothing shows. A standalone `.html` opens on the browser's white default, and a Streamlit `components.html` iframe is white by default too — neither inherits the host's dark theme. So `build_html` paints its **own** dark backdrop (`background="#0e1117"` by default). Only pass `background="transparent"` when you *know* the host behind the iframe is already dark and you want a seamless blend. White font + dark background travel together — never set one without the other.
+- **White font needs TWO selectors + `!important`.** markmap draws text as SVG `<text>` **and** sometimes as `<foreignObject>` (HTML inside SVG). Style both or half the labels stay dark:
+  ```css
+  svg.markmap text { fill: #ffffff !important; }
+  svg.markmap foreignObject, svg.markmap foreignObject * { color: #ffffff !important; }
+  ```
+- **Embed via an isolated iframe** (`components.html` in Streamlit, or a standalone `.html` file). Host CSS won't leak in and the map's CSS won't leak out, so the `<style>` goes inline in the HTML string.
+- **The source is HTML-escaped before embedding.** The autoloader reads the Markdown from the div's `textContent`, which the browser decodes — so escaping round-trips losslessly. Without it, a `</div>` or `List<String>` in the outline closes the div early and silently truncates the map.
+
+---
+
+## 3. Expand-by-level control
+
+Don't rebuild the map — just **rewrite `initialExpandLevel` in the frontmatter** before rendering. Use `set_expand_level(src, level)` from the helper module:
+
+- `level` 1/2/3 expands that many levels.
+- `level = -1` **expands everything** (the "expand all" button).
+- Injection is **scoped to the frontmatter and done in place**: rewrite an existing `initialExpandLevel`, else add one under the `markmap:` key (block or inline form), else prepend a minimal frontmatter — but only when none exists. It never rewrites the word "initialExpandLevel" sitting in your body text, and never stacks a second `---` block on top of existing frontmatter (markmap reads only the first block, so stacking would silently drop your other settings).
+
+---
+
+## 4. Search that filters the tree
+
+When there is a query, keep only nodes that **match** + their **path to the root (ancestors)** + their **subtree (descendants)**, so a hit appears in context instead of floating alone. Algorithm in `filter_markmap()`:
+
+1. Parse each line into a node. Heading level = number of `#`. List-item level = (last heading level) + 1 + indentation, where indentation counts 2-space *or* tab units (`expandtabs`), and the marker may be `-`/`*`/`+`/numbered.
+2. **Build an explicit parent tree** with a kind-aware stack — a heading is parented to the nearest shallower *heading*, never to a bullet, even when its `#`-rank numerically exceeds a bullet's level. (Heading rank and bullet indentation share one number line, so comparing raw depths mis-nests an `H4`-after-a-bullet; the parent tree is what keeps ancestry correct.)
+3. Mark each node match / no-match with an **accent-insensitive** comparison (`_norm`).
+4. Keep every match, every ancestor (walk parent pointers up), and every descendant (any node whose ancestor chain hits a match). Rebuild the Markdown and force `initialExpandLevel: -1`.
+
+`_norm` strips accents via Unicode NFD so "compliance", "COMPLIANCE", and accented variants all match. Zero matches yields a frontmatter-only (blank) map by design — callers branch on the returned count.
+
+---
+
+## 5. Minimal usage
+
+The helpers live in `scripts/`, so put that directory on the import path first (point it at this skill's `scripts/` folder).
+
+Standalone HTML (no framework):
+```python
+import sys; sys.path.insert(0, "scripts")
+from render_markmap import build_html, set_expand_level, filter_markmap
+
+src = open("assets/example.md", encoding="utf-8").read()
+# optional: src, n = filter_markmap(src, "branch b")
+# optional: src = set_expand_level(src, -1)
+open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
+```
+
+Inside Streamlit:
+```python
+import sys; sys.path.insert(0, "scripts")
+from render_markmap import render_markmap, set_expand_level
+render_markmap(set_expand_level(src, level), height=850)
+```
+
+---
+
+## The 5 lessons this skill must carry
+
+1. **White font travels with a dark background.** White on a white/transparent surface renders blank — the most common failure. `build_html` paints its own dark backdrop by default; only go transparent over a host you know is dark. And style both `text` **and** `foreignObject *` with `!important`, or half the labels stay dark.
+2. `build_html` HTML-escapes the source, so `<`/`>`/`&` in node text are safe and round-trip to markmap unchanged — don't pre-escape them yourself.
+3. Expansion/search work by **editing the Markdown text** (regex/filter), not by calling the markmap API. Keep edits scoped to the frontmatter; never stack a second `---` block.
+4. `initialExpandLevel: -1` = expand all.
+5. Useful search = match **+ ancestors + descendants**, compared **without accents** — and ancestry comes from an explicit parent tree, because heading rank and bullet indent share one number line.
