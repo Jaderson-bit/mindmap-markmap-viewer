@@ -15,45 +15,133 @@ Streamlit (optional):
 import html
 import re
 import unicodedata
+from pathlib import Path
+
+
+# Vendored markmap stack (pinned exact versions; see assets/vendor/). Loaded as
+# local files so the generated map opens OFFLINE -- no CDN, no network request.
+# Order matters: d3 is a global peer of markmap-view; lib/toolbar augment the
+# same `window.markmap` namespace.
+_VENDOR_JS = ("d3.min.js", "markmap-view.min.js", "markmap-lib.min.js", "markmap-toolbar.min.js")
+_VENDOR_CSS = "markmap-toolbar.min.css"
+
+
+def _default_vendor_uri() -> str:
+    """file:// URI of this skill's bundled `assets/vendor/` directory.
+
+    Used as the default `vendor` prefix so a standalone build_html() call opens
+    offline on THIS machine with no extra setup ("referenciar localmente"). For a
+    portable/shareable bundle, write_mindmap() copies the folder next to the HTML
+    and you point `vendor` at the relative "vendor" path instead."""
+    return (Path(__file__).resolve().parent.parent / "assets" / "vendor").as_uri()
 
 
 # --------------------------------------------------------------------------- #
 # Rendering
 # --------------------------------------------------------------------------- #
-def build_html(src: str, height: int = 850, background: str = "#0e1117") -> str:
-    """Return a self-contained HTML document that renders `src` as a markmap
-    with a WHITE font, using the markmap-autoloader from a CDN.
+# Browser-side init (plain JS constant -> no f-string brace escaping). Reads the
+# Markdown from #markmap-source.textContent (the browser decodes the HTML escapes
+# losslessly), transforms it in-browser, and wires up the toolbar.
+_INIT_JS = r"""
+(function () {
+  var M = window.markmap;
+  var svg = document.getElementById("markmap");
+  var srcEl = document.getElementById("markmap-source");
+  if (!M || !M.Markmap || !M.Transformer) {
+    document.body.insertAdjacentHTML("beforeend",
+      '<p style="color:#ff8a8a;font-family:system-ui,sans-serif;padding:1rem">' +
+      "Could not load the markmap libraries. Keep the <code>vendor/</code> folder " +
+      "next to this HTML file so the map can open offline.</p>");
+    return;
+  }
+  var transformer = new M.Transformer();
+  var result = transformer.transform(srcEl.textContent);
+  var fm = result.frontmatter || {};
+  var mm = M.Markmap.create(svg, M.deriveOptions(fm.markmap), result.root);
 
-    `background` defaults to a dark color (Streamlit's dark-theme bg) because the
-    white font is INVISIBLE on a light surface. Standalone HTML opens on the
-    browser's white default, so the renderer must paint its own dark backdrop.
-    Pass background="transparent" only when you KNOW the host is already dark and
-    you want the map to blend into it seamlessly.
+  function setFold(node, fold) {
+    node.payload = Object.assign({}, node.payload, { fold: fold });
+    (node.children || []).forEach(function (c) { setFold(c, fold); });
+  }
+  // Re-render WITHOUT re-initializing. setData(DATA) re-runs the internal data
+  // init, which re-derives every node's fold from initialExpandLevel and would
+  // wipe the manual fold set below. setData() with NO arg keeps state.data
+  // (our mutated fold) and just re-renders.
+  function rerender() { return Promise.resolve(mm.setData()).then(function () { mm.fit(); }); }
 
-    `src` is HTML-escaped before it goes in the <div>. The autoloader reads the
-    Markdown from the div's textContent, which the browser decodes back to the
-    original characters -- so escaping round-trips losslessly while stopping any
-    `<`, `>`, or `&` in the outline (e.g. `</div>`, `List<String>`) from breaking
-    out of the div and silently truncating the map.
-    """
-    safe = html.escape(str(src), quote=False)
-    # CDN pinned to the 0.18 minor (patch releases still float). @latest can ship
-    # breaking autoloader API changes; bump the minor deliberately after testing.
-    return f"""<!doctype html>
-<meta charset="utf-8">
-<style>
-  html, body {{ margin:0; padding:0; background: {background}; }}
-  svg.markmap {{ width: 100%; height: {height - 12}px; }}
-  /* === WHITE FONT (style BOTH the SVG <text> and the <foreignObject> HTML) === */
-  svg.markmap text {{ fill: #ffffff !important; }}
-  svg.markmap foreignObject,
-  svg.markmap foreignObject * {{ color: #ffffff !important; }}
-  svg.markmap a {{ color: #7fd1ff !important; }}
-  svg.markmap code {{ color: #ffd479 !important; background: rgba(255,255,255,.08); }}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/markmap-autoloader@0.18"></script>
-<div class="markmap">{safe}</div>
+  if (window.__MM_TOOLBAR__ !== false && M.Toolbar) {
+    // Material "unfold_more"/"unfold_less" icons; built via Toolbar.icon (a DOM
+    // node) like the built-in items -- a plain HTML string would render as text.
+    var UNFOLD_MORE = "M12 5.83L15.17 9l1.41-1.41L12 3 7.41 7.59 8.83 9 12 5.83zm0 12.34L8.83 15l-1.41 1.41L12 21l4.59-4.59L15.17 15 12 18.17z";
+    var UNFOLD_LESS = "M7.41 18.59L8.83 20 12 16.83 15.17 20l1.41-1.41L12 14l-4.59 4.59zm9.18-13.18L15.17 4 12 7.17 8.83 4 7.41 5.41 12 10l4.59-4.59z";
+    var tb = M.Toolbar.create(mm);
+    tb.setBrand(false);
+    tb.register({
+      id: "expandAll", title: "Expand all", content: M.Toolbar.icon(UNFOLD_MORE),
+      onClick: function () { setFold(mm.state.data, 0); rerender(); }
+    });
+    tb.register({
+      id: "collapseAll", title: "Collapse all", content: M.Toolbar.icon(UNFOLD_LESS),
+      onClick: function () { (mm.state.data.children || []).forEach(function (c) { setFold(c, 1); }); rerender(); }
+    });
+    tb.setItems(["zoomIn", "zoomOut", "fit", "expandAll", "collapseAll"]);
+    var el = tb.render();
+    el.style.position = "fixed";
+    el.style.right = "14px";
+    el.style.bottom = "14px";
+    document.body.appendChild(el);
+  }
+})();
 """
+
+
+def build_html(src: str, height: int = 850, background: str = "#0e1117",
+               vendor: str = None, toolbar: bool = True) -> str:
+    """Return a self-contained HTML document that renders `src` as a markmap with
+    a WHITE font, loading the markmap stack from LOCAL vendored files so the map
+    opens OFFLINE -- no CDN, no network request.
+
+    `vendor` is the URL/path prefix for the `<script src>`/`<link>` tags. It
+    defaults to this skill's bundled `assets/vendor/` (a file:// URI), so a
+    standalone call works offline on this machine immediately. For a portable
+    bundle, pass a relative prefix (e.g. "vendor") and ship that folder beside the
+    HTML -- write_mindmap() does this for you.
+
+    `background` defaults to a dark color because the white font is INVISIBLE on a
+    light surface. Standalone HTML opens on the browser's white default, so the
+    renderer must paint its own dark backdrop. Pass background="transparent" only
+    when you KNOW the host is already dark and want the map to blend into it.
+
+    `src` is HTML-escaped before it goes in the source div. The browser decodes
+    the div's textContent back to the original characters -- so escaping
+    round-trips losslessly while stopping any `<`, `>`, or `&` in the outline
+    (e.g. `</div>`, `List<String>`) from breaking out of the div and truncating
+    the map. `toolbar=False` renders without the navigation toolbar.
+    """
+    if vendor is None:
+        vendor = _default_vendor_uri()
+    vendor = str(vendor).rstrip("/")
+    safe = html.escape(str(src), quote=False)
+    scripts = "\n".join('<script src="%s/%s"></script>' % (vendor, f) for f in _VENDOR_JS)
+    return (
+        "<!doctype html>\n"
+        '<meta charset="utf-8">\n'
+        f'<link rel="stylesheet" href="{vendor}/{_VENDOR_CSS}">\n'
+        "<style>\n"
+        f"  html, body {{ margin:0; padding:0; background: {background}; }}\n"
+        f"  #markmap {{ width:100%; height:{height - 12}px; display:block; }}\n"
+        "  /* === WHITE FONT (style BOTH the SVG <text> and the <foreignObject> HTML) === */\n"
+        "  svg.markmap text { fill: #ffffff !important; }\n"
+        "  svg.markmap foreignObject, svg.markmap foreignObject * { color: #ffffff !important; }\n"
+        "  svg.markmap a { color: #7fd1ff !important; }\n"
+        "  svg.markmap code { color: #ffd479 !important; background: rgba(255,255,255,.08); }\n"
+        "</style>\n"
+        '<svg id="markmap" class="markmap"></svg>\n'
+        f'<div id="markmap-source" style="display:none">{safe}</div>\n'
+        f"<script>window.__MM_TOOLBAR__ = {'true' if toolbar else 'false'};</script>\n"
+        f"{scripts}\n"
+        f"<script>{_INIT_JS}</script>\n"
+    )
 
 
 def render_markmap(src: str, height: int = 850, background: str = "#0e1117"):

@@ -12,7 +12,8 @@ markmap renders a Markdown outline as a zoomable mind map, but three things need
 
 ## Features
 
-- One function to a self-contained HTML document (`build_html`) — no build step, no bundler; markmap loads from a pinned CDN.
+- One function to a self-contained HTML bundle (`build_html`) — no build step, no bundler. The markmap stack is **vendored locally and pinned exact**, so the map **opens offline** (no CDN, no network request).
+- Built-in **navigation toolbar**: zoom in/out, fit-to-window, expand-all / collapse-all.
 - Expand-by-level (`set_expand_level`), including expand-all (`-1`).
 - Accent-insensitive, context-preserving search (`filter_markmap`).
 - HTML-safe: `<`, `>`, `&` in node text (`List<String>`, `a < b`) round-trip correctly instead of breaking the page.
@@ -23,7 +24,7 @@ markmap renders a Markdown outline as a zoomable mind map, but three things need
 Via the marketplace (once published):
 
 ```bash
-claude plugin install mindmap-markmap-viewer@daymade-skills
+claude plugin install mindmap-markmap-viewer
 ```
 
 Or manually — copy this folder into your skills directory:
@@ -60,7 +61,9 @@ See [`SKILL.md`](SKILL.md) for the source format and authoring rules.
 mindmap-markmap-viewer/
 ├── SKILL.md                     # operational guide (loads when the skill triggers)
 ├── scripts/render_markmap.py    # build_html / set_expand_level / filter_markmap
-├── assets/example.md            # minimal sample outline
+├── assets/
+│   ├── example.md               # minimal sample outline
+│   └── vendor/                  # pinned markmap + d3 libs, loaded locally (offline)
 ├── evals/                       # dependency-free regression suite + eval prompts
 └── references/
     ├── internals.md             # how the helpers work and why

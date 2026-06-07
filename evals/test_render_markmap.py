@@ -36,8 +36,20 @@ check("#10 raw <,>,& escaped, not emitted literally",
 check("dark background by default", "background: #0e1117;" in build_html("- x"))
 check("background override to transparent",
       "background: transparent;" in build_html("- x", background="transparent"))
-check("CDN pinned @0.18, not @latest",
-      "markmap-autoloader@0.18" in build_html("- x") and "@latest" not in build_html("- x"))
+offline = build_html("- x", vendor="vendor")
+check("offline: loads vendored libs locally, no CDN/network URL",
+      '<script src="vendor/d3.min.js">' in offline
+      and '<script src="vendor/markmap-view.min.js">' in offline
+      and '<script src="vendor/markmap-lib.min.js">' in offline
+      and "http://" not in offline and "https://" not in offline)
+VENDOR = os.path.join(HERE, "..", "assets", "vendor")
+check("vendored libs present on disk (pinned offline bundle)",
+      all(os.path.exists(os.path.join(VENDOR, f)) for f in
+          ("d3.min.js", "markmap-view.min.js", "markmap-lib.min.js",
+           "markmap-toolbar.min.js", "markmap-toolbar.min.css")))
+check("toolbar wired by default, suppressible via toolbar=False",
+      "__MM_TOOLBAR__ = true" in build_html("- x")
+      and "__MM_TOOLBAR__ = false" in build_html("- x", toolbar=False))
 check("white-font text + foreignObject selectors present",
       "svg.markmap text { fill: #ffffff !important; }" in h and "foreignObject *" in h)
 
@@ -110,7 +122,8 @@ with open(os.path.join(HERE, "..", "assets", "example.md"), encoding="utf-8") as
     example = f.read()
 rendered = build_html(set_expand_level(example, 1))
 check("example.md builds a non-empty markmap document",
-      '<div class="markmap">' in rendered and "Branch A" in rendered)
+      '<svg id="markmap" class="markmap">' in rendered
+      and 'id="markmap-source"' in rendered and "Branch A" in rendered)
 
 print("\n=> ALL PASSED" if ok else "\n=> SOME FAILED")
 sys.exit(0 if ok else 1)

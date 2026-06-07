@@ -1,0 +1,4 @@
+# Vendored third-party libraries: don't normalize EOL, suppress diffs, and
+# exclude from GitHub language stats.
+assets/vendor/*.js  -text -diff linguist-vendored
+assets/vendor/*.css -text -diff linguist-vendored

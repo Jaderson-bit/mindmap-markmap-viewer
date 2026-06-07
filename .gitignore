@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 mindmap.html
+_test_offline.html
+.playwright-mcp/

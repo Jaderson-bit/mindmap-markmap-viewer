@@ -8,8 +8,8 @@ description: Generate and render interactive mind maps from hierarchical Markdow
 Render hierarchical Markdown as an interactive SVG mind map with **markmap.js**, plus three custom layers: **white-font CSS**, **expand-by-level control**, and **search that filters the tree**.
 
 ```
-source.md  ──►  filter / set expand level (Python)  ──►  build_html()  ──►  markmap-autoloader (CDN)  ──►  SVG
- (outline)        (manipulate the text)                  (HTML + CSS)        (JS in an iframe)            (screen)
+source.md  ──►  filter / set expand level (Python)  ──►  build_html()  ──►  vendored markmap libs (local, offline)  ──►  SVG + toolbar
+ (outline)        (manipulate the text)                  (HTML + CSS)        (transform + render in the browser)          (screen)
 ```
 
 Helper functions live in `scripts/render_markmap.py`; a minimal source file is in `assets/example.md`; regression tests are in `evals/`. Deeper docs: [`references/internals.md`](references/internals.md) (how the helpers work) and [`references/lessons.md`](references/lessons.md) (real-world lessons + the adversarial counter-review behind the current code).
@@ -24,7 +24,7 @@ markmap derives hierarchy from **headings (`#`)** and **nested list items** — 
 ---
 markmap:
   colorFreezeLevel: 2      # freeze color from level 2 down (branches keep the parent color)
-  initialExpandLevel: 1    # how many levels start expanded (-1 = expand everything)
+  initialExpandLevel: 2    # levels kept open; root is level 1, so 2 = root + branches (-1 = all)
   maxWidth: 380            # max node width in px (forces wrapping)
 ---
 
@@ -49,10 +49,11 @@ Node text may contain `<`, `>`, and `&` freely (`a < b`, `List<String>`, even `<
 
 ## 2. Rendering (white font)
 
-The entire renderer is three things: the autoloader `<script>`, a `<div class="markmap">` holding the Markdown, and the CSS. See `build_html()` / `render_markmap()` in [`scripts/render_markmap.py`](scripts/render_markmap.py), with the rationale in [`references/internals.md`](references/internals.md).
+The renderer is: the **vendored markmap `<script>`s** (local files), an `<svg class="markmap">` plus a hidden source `<div>` holding the Markdown, a small **init script** (transform → `Markmap.create` → toolbar), and the CSS. See `build_html()` / `render_markmap()` in [`scripts/render_markmap.py`](scripts/render_markmap.py), with the rationale in [`references/internals.md`](references/internals.md).
 
 Non-obvious points (these cost rework):
-- **`markmap-autoloader`** scans for every `<div class="markmap">` and renders it automatically — no JS init code needed; just drop the Markdown in the div.
+- **Offline by default.** The markmap stack (d3 + markmap-view/-lib/-toolbar, pinned exact in [`assets/vendor/`](assets/vendor/)) loads from **local files — no CDN, no network request**, so a map opens with the network off. `build_html(vendor=...)` sets the path prefix; it defaults to this skill's own vendor dir (a `file://` URI), so a standalone file opens offline on **this** machine. For a portable bundle, ship a `vendor/` folder beside the HTML and pass `vendor="vendor"`.
+- **Navigation toolbar** (bottom-right): zoom in/out, fit-to-window, expand-all, collapse-all. Pass `toolbar=False` to omit it. Expand/collapse set each node's `fold` then re-render with `setData()` **and no argument** — passing data re-derives `fold` from `initialExpandLevel` and would wipe the manual fold.
 - **White font is invisible without a dark background.** This is the #1 way the map "renders blank": the font is white, the surface is white, so nothing shows. A standalone `.html` opens on the browser's white default, and a Streamlit `components.html` iframe is white by default too — neither inherits the host's dark theme. So `build_html` paints its **own** dark backdrop (`background="#0e1117"` by default). Only pass `background="transparent"` when you *know* the host behind the iframe is already dark and you want a seamless blend. White font + dark background travel together — never set one without the other.
 - **White font needs TWO selectors + `!important`.** markmap draws text as SVG `<text>` **and** sometimes as `<foreignObject>` (HTML inside SVG). Style both or half the labels stay dark:
   ```css
@@ -60,7 +61,7 @@ Non-obvious points (these cost rework):
   svg.markmap foreignObject, svg.markmap foreignObject * { color: #ffffff !important; }
   ```
 - **Embed via an isolated iframe** (`components.html` in Streamlit, or a standalone `.html` file). Host CSS won't leak in and the map's CSS won't leak out, so the `<style>` goes inline in the HTML string.
-- **The source is HTML-escaped before embedding.** The autoloader reads the Markdown from the div's `textContent`, which the browser decodes — so escaping round-trips losslessly. Without it, a `</div>` or `List<String>` in the outline closes the div early and silently truncates the map.
+- **The source is HTML-escaped before embedding.** The init script reads the Markdown from the hidden source div's `textContent`, which the browser decodes — so escaping round-trips losslessly. Without it, a `</div>` or `List<String>` in the outline closes the div early and silently truncates the map.
 
 ---
 
