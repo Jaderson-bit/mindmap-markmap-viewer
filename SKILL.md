@@ -124,6 +124,28 @@ render_markmap(set_expand_level(src, level), height=850)
 
 ---
 
+## 6. Authoring guidelines (balanced, scannable maps)
+
+The shape of a mind map carries meaning, so structure the content deliberately:
+
+- **5–8 main branches** off the root. Fewer feels thin; more is hard to scan at once — group related ideas under an intermediate node instead of widening the root.
+- **3–6 children per branch**, kept roughly even across branches. One giant branch beside several stubs reads as unfinished; rebalance or split it.
+- **Labels of 1–3 words.** A node is a handle, not a sentence. Put the explanation on a *child* node (the **term → parent / description → child** rule from §1), never inline on the label.
+- **Balanced depth.** Keep branches within ~1 level of each other; a single branch that plunges several levels deeper than its siblings unbalances the layout.
+- **Let `apply_presets` set the frontmatter** (color, wrap width, expand level) so you don't hand-tune each map (§1).
+
+### Quality checklist (run before shipping a map)
+
+- [ ] Root has **5–8 branches**; none is a dumping ground.
+- [ ] Every branch has **3–6 children**, roughly balanced.
+- [ ] Labels are **1–3 words**; long text lives on child nodes, not labels.
+- [ ] Depth is **even** across branches (no lone deep tunnel).
+- [ ] `apply_presets` applied, or the frontmatter set deliberately.
+- [ ] Opened the `.html` **with the network off** — it renders (offline bundle intact).
+- [ ] Searched a known term — it filters to that node **+ its context**.
+
+---
+
 ## The 5 lessons this skill must carry
 
 1. **White font travels with a dark background.** White on a white/transparent surface renders blank — the most common failure. `build_html` paints its own dark backdrop by default; only go transparent over a host you know is dark. And style both `text` **and** `foreignObject *` with `!important`, or half the labels stay dark.
