@@ -27,6 +27,12 @@ Ask Claude Code to install it from this repo:
 
 > Install this skill from https://github.com/Jaderson-bit/mindmap-markmap-viewer
 
+Or, as a developer, clone it into your skills directory:
+
+```bash
+git clone https://github.com/Jaderson-bit/mindmap-markmap-viewer.git ~/.claude/skills/mindmap-markmap-viewer
+```
+
 ## Usage
 
 ```python
