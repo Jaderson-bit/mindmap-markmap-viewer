@@ -33,6 +33,12 @@ Or, as a developer, clone it into your skills directory:
 git clone https://github.com/Jaderson-bit/mindmap-markmap-viewer.git ~/.claude/skills/mindmap-markmap-viewer
 ```
 
+Or copy a folder you already have:
+
+```bash
+cp -r mindmap-markmap-viewer ~/.claude/skills/
+```
+
 ## Usage
 
 ```python
