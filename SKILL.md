@@ -54,7 +54,8 @@ Node text may contain `<`, `>`, and `&` freely (`a < b`, `List<String>`, even `<
 The renderer is: the **vendored markmap `<script>`s** (local files), an `<svg class="markmap">` plus a hidden source `<div>` holding the Markdown, a small **init script** (transform → `Markmap.create` → toolbar), and the CSS. See `build_html()` / `render_markmap()` in [`scripts/render_markmap.py`](scripts/render_markmap.py), with the rationale in [`references/internals.md`](references/internals.md).
 
 Non-obvious points (these cost rework):
-- **Offline by default.** The markmap stack (d3 + markmap-view/-lib/-toolbar, pinned exact in [`assets/vendor/`](assets/vendor/)) loads from **local files — no CDN, no network request**, so a map opens with the network off. `build_html(vendor=...)` sets the path prefix; it defaults to this skill's own vendor dir (a `file://` URI), so a standalone file opens offline on **this** machine. For a portable bundle, ship a `vendor/` folder beside the HTML and pass `vendor="vendor"`.
+- **Offline, single self-contained file by default.** `build_html` **inlines** the vendored markmap stack (d3 + markmap-view/-lib/-toolbar, pinned exact in [`assets/vendor/`](assets/vendor/)) directly into the HTML — **no CDN, no network, and no sibling files** — so the one `.html` opens offline anywhere you move or share it. (That single-file default is the fix for maps that failed to load their libs when opened alone.) Pass `inline=False` for a smaller HTML that instead references a `vendor/` folder via `vendor="vendor"`, which must then travel beside it.
+- **LaTeX math is not rendered in the offline bundle.** markmap's KaTeX support needs `window.katex`, which isn't vendored, so `$...$` / `$$...$$` show as plain text. Everything else renders fully offline.
 - **Navigation toolbar** (bottom-right): zoom in/out, fit-to-window, expand-all, collapse-all, and **download as SVG / PNG**. Pass `toolbar=False` to omit it. Expand/collapse set each node's `fold` then re-render with `setData()` **and no argument** — passing data re-derives `fold` from `initialExpandLevel` and would wipe the manual fold. Export snapshots the current fold state; the SVG inlines the white-font CSS + a dark backdrop so it stands alone, and PNG rasterizes at 2× (falling back to SVG if a browser refuses to rasterize the `<foreignObject>` labels — markmap draws node text as HTML-in-SVG, not `<text>`).
 - **White font is invisible without a dark background.** This is the #1 way the map "renders blank": the font is white, the surface is white, so nothing shows. A standalone `.html` opens on the browser's white default, and a Streamlit `components.html` iframe is white by default too — neither inherits the host's dark theme. So `build_html` paints its **own** dark backdrop (`background="#0e1117"` by default). Only pass `background="transparent"` when you *know* the host behind the iframe is already dark and you want a seamless blend. White font + dark background travel together — never set one without the other.
 - **White font needs TWO selectors + `!important`.** markmap draws text as SVG `<text>` **and** sometimes as `<foreignObject>` (HTML inside SVG). Style both or half the labels stay dark:
@@ -94,8 +95,8 @@ When there is a query, keep only nodes that **match** + their **path to the root
 
 The helpers live in `scripts/`, so put that directory on the import path first (point it at this skill's `scripts/` folder).
 
-Portable bundle (recommended) — writes the `.md` source of truth, the `.html`
-render, and a sibling `vendor/` so it opens offline anywhere:
+Single self-contained file (recommended) — writes the `.md` source of truth and a
+fully **inlined** `.html` that opens offline anywhere, with no sibling `vendor/`:
 ```python
 import sys; sys.path.insert(0, "scripts")
 from render_markmap import write_mindmap, apply_presets, set_expand_level, filter_markmap
@@ -104,12 +105,12 @@ src = open("assets/example.md", encoding="utf-8").read()
 src = apply_presets(src)                       # fill default markmap options (no override)
 # optional: src, n = filter_markmap(src, "branch b")   # search + keep context
 # optional: src = set_expand_level(src, -1)             # expand all
-write_mindmap(src, "out/mapa.html")            # -> out/mapa.md + out/mapa.html + out/vendor/
+write_mindmap(src, "out/mapa.html")            # -> out/mapa.md + a self-contained out/mapa.html
+# smaller HTML + a sibling vendor/ folder instead: write_mindmap(src, "out/mapa.html", inline=False)
 ```
 
-Just the HTML string (e.g. to embed) — `build_html(src)` defaults `vendor` to this
-skill's own `assets/vendor/` via a `file://` URI, so it opens offline on this
-machine without copying anything:
+Just the HTML string (e.g. to embed) — `build_html(src)` returns one self-contained
+document with the libraries inlined:
 ```python
 from render_markmap import build_html
 open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
@@ -141,7 +142,7 @@ The shape of a mind map carries meaning, so structure the content deliberately:
 - [ ] Labels are **1–3 words**; long text lives on child nodes, not labels.
 - [ ] Depth is **even** across branches (no lone deep tunnel).
 - [ ] `apply_presets` applied, or the frontmatter set deliberately.
-- [ ] Opened the `.html` **with the network off** — it renders (offline bundle intact).
+- [ ] Opened the `.html` **with the network off** (and from a different folder) — it still renders (self-contained).
 - [ ] Searched a known term — it filters to that node **+ its context**.
 
 ---

@@ -3,3 +3,6 @@ __pycache__/
 mindmap.html
 _test_offline.html
 .playwright-mcp/
+_wiki/img/
+_wiki/demo/
+_wiki/_preview_*.html

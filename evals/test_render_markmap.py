@@ -13,7 +13,8 @@ import tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "scripts"))
 from render_markmap import (  # noqa: E402
-    build_html, write_mindmap, set_expand_level, apply_presets, filter_markmap, _norm)
+    build_html, write_mindmap, set_expand_level, apply_presets, filter_markmap,
+    _norm, _set_markmap, _count_nodes)
 
 ok = True
 
@@ -31,21 +32,37 @@ def fences(s):
 
 # ===== build_html: HTML escaping (#9 </div>, #10 raw <,>,&) =====
 h = build_html("# T\n- close with </div>\n- second")
-check("#9 </div> in source does not create a second closing div",
-      h.count("</div>") == 1 and "&lt;/div&gt;" in h)
+check("#9 </div> in source does not create a stray closing div",
+      "&lt;/div&gt;" in h)
 h2 = build_html("# List<String> generic & <b>bold</b>")
-check("#10 raw <,>,& escaped, not emitted literally",
-      "List&lt;String&gt;" in h2 and "List<String>" not in h2 and "&amp;" in h2)
+check("#10 raw <,>,& escaped in the source div, not emitted literally",
+      "List&lt;String&gt;" in h2 and "&amp;" in h2)
 check("dark background by default", "background: #0e1117;" in build_html("- x"))
 check("background override to transparent",
       "background: transparent;" in build_html("- x", background="transparent"))
-offline = build_html("- x", vendor="vendor")
-check("offline: loads vendored libs locally, no remote src/href or CDN",
+
+# ----- inline (default): SINGLE self-contained file, libs embedded (closes #1) -----
+# NB: scan page-level <tags>, not the embedded lib bodies -- markmap-lib's source
+# legitimately contains a cdn.jsdelivr string (its KaTeX lazy-loader; see the
+# documented offline-math limitation), so a naive "cdn. not in doc" is a false hit.
+inline_doc = build_html("- x")
+_ext = build_html("- x", vendor="vendor", inline=False)
+check("inline default: libs embedded as inline <script>, no external file refs (closes #1)",
+      '<script src="vendor/d3.min.js">' in _ext
+      and '<script src="vendor/d3.min.js">' not in inline_doc
+      and inline_doc.count("<script>") > _ext.count("<script>"))
+check("inline default: it's actually self-contained (libs + toolbar CSS embedded)",
+      len(inline_doc) > 200000 and "mm-toolbar" in inline_doc and "<style>" in inline_doc)
+
+# ----- inline=False: reference a sibling vendor/ folder instead -----
+offline = build_html("- x", vendor="vendor", inline=False)
+check("inline=False: loads vendored libs locally, no remote src/href or CDN",
       '<script src="vendor/d3.min.js">' in offline
       and '<script src="vendor/markmap-view.min.js">' in offline
       and '<script src="vendor/markmap-lib.min.js">' in offline
       and 'src="http' not in offline and 'href="http' not in offline
-      and "cdn." not in offline)  # an XML-namespace http URI is fine; a fetched URL is not
+      and "cdn." not in offline)
+
 VENDOR = os.path.join(HERE, "..", "assets", "vendor")
 check("vendored libs present on disk (pinned offline bundle)",
       all(os.path.exists(os.path.join(VENDOR, f)) for f in
@@ -72,9 +89,17 @@ check("#1 frontmatter without markmap key stays a single block",
       fences(out) == 2 and "title: foo" in out and "initialExpandLevel: 1" in out)
 
 out = set_expand_level("---\nmarkmap: {colorFreezeLevel: 2}\n---\n\n# Root", 2)
-check("#2 inline markmap mapping merged, colorFreezeLevel kept",
+check("inline markmap mapping merged, colorFreezeLevel kept",
       fences(out) == 2 and "colorFreezeLevel: 2" in out
       and "initialExpandLevel: 2" in out and out.count("markmap:") == 1)
+
+out = set_expand_level("---\nmarkmap: {initialExpandLevel: 1, maxWidth: 380}\n---\n# Root", -1)
+check("#12 override rewrite INSIDE an inline mapping keeps sibling keys",
+      "initialExpandLevel: -1" in out and "maxWidth: 380" in out and fences(out) == 2)
+
+out = set_expand_level("---\nmarkmap: garbage\n---\n# Root", 2)
+check("#2 scalar markmap: value -> no duplicate markmap key (left untouched)",
+      out.count("markmap:") == 1)
 
 out = set_expand_level("---\nmarkmap:\n  colorFreezeLevel: 2\n---\n\n# Notes\n- set initialExpandLevel: 0 to collapse", 3)
 check("#3 body prose 'initialExpandLevel: 0' untouched",
@@ -91,6 +116,14 @@ check("no-frontmatter -> prepend minimal frontmatter",
 twice = set_expand_level(set_expand_level("# Root", 1), 3)
 check("idempotent (one directive after re-run)",
       twice.count("initialExpandLevel") == 1 and "initialExpandLevel: 3" in twice)
+
+# ----- override rewrite must preserve comma-bearing LIST values (review #1) -----
+out = _set_markmap('---\nmarkmap:\n  color: ["#fff", "#000"]\n---\n# R', "color", '["#abc"]', override=True)
+check("override rewrite preserves a comma-bearing list value (block style)",
+      'color: ["#abc"]' in out and '"#000"' not in out and fences(out) == 2)
+out = _set_markmap('---\nmarkmap: {color: ["#a", "#b"], maxWidth: 380}\n---\n# R', "color", '["#z"]', override=True)
+check("override rewrite preserves siblings around a list (inline mapping)",
+      '["#z"]' in out and "maxWidth: 380" in out and '"#b"' not in out)
 
 # ===== apply_presets: sensible defaults that never clobber author values =====
 small = apply_presets("# Root\n## A\n- x\n## B\n- y")
@@ -109,6 +142,11 @@ check("presets: large map (>30 nodes) -> initialExpandLevel 2", "initialExpandLe
 pal = apply_presets("# Root\n- a", color=["#ff0000", "#00ff00"])
 check("presets: color palette injected as a list",
       '"#ff0000"' in pal and '"#00ff00"' in pal and "color:" in pal)
+
+# ----- _count_nodes ignores code fences + non-ATX '#hashtag' (review #3) -----
+fenced = "# Title\n```\n# not a heading\nprint(1)\n```\n#hashtag\n- real item\n"
+check("#3 _count_nodes counts real heading + bullet, skips fence body and #hashtag",
+      _count_nodes(fenced) == 2)
 
 # ===== filter_markmap: hierarchy =====
 filt, n = filter_markmap("# Root\n- a\n\t- b match\n", "b match")
@@ -143,7 +181,7 @@ check("_norm strips accents", _norm("COMPLIÂNCIA") == "compliancia")
 filt, n = filter_markmap("", "anything")
 check("#8 empty input -> 0 matches (documented blank-canvas)", n == 0)
 
-# ===== example.md renders into a markmap div =====
+# ===== example.md renders into a markmap doc =====
 with open(os.path.join(HERE, "..", "assets", "example.md"), encoding="utf-8") as f:
     example = f.read()
 rendered = build_html(set_expand_level(example, 1))
@@ -151,19 +189,39 @@ check("example.md builds a non-empty markmap document",
       '<svg id="markmap" class="markmap">' in rendered
       and 'id="markmap-source"' in rendered and "Branch A" in rendered)
 
-# ===== write_mindmap: portable .md + .html + vendor/ =====
+# ===== write_mindmap: inline single file (default) + non-inline bundle =====
 tmp = tempfile.mkdtemp()
 try:
     md_p, html_p = write_mindmap("# Root\n- a\n- b", os.path.join(tmp, "mapa.html"))
     html_text = open(html_p, encoding="utf-8").read()
     md_text = open(md_p, encoding="utf-8").read()
-    check("write_mindmap emits .md + .html + offline vendor/ with relative refs",
+    check("write_mindmap (inline default): self-contained single .html, no vendor/ folder (closes #1)",
           os.path.exists(md_p) and os.path.exists(html_p)
-          and os.path.exists(os.path.join(tmp, "vendor", "d3.min.js"))
-          and '<script src="vendor/d3.min.js">' in html_text
+          and not os.path.exists(os.path.join(tmp, "vendor"))
+          and "<script src=" not in html_text and 'src="vendor' not in html_text
+          and len(html_text) > 200000
           and md_text == "# Root\n- a\n- b")
 finally:
     shutil.rmtree(tmp, ignore_errors=True)
+
+tmp2 = tempfile.mkdtemp()
+try:
+    md_p, html_p = write_mindmap("# Root\n- a", os.path.join(tmp2, "m.html"), inline=False)
+    html_text = open(html_p, encoding="utf-8").read()
+    vdir = os.path.join(tmp2, "vendor")
+    check("write_mindmap(inline=False): copies vendor/ (no README.md), relative refs",
+          os.path.exists(os.path.join(vdir, "d3.min.js"))
+          and not os.path.exists(os.path.join(vdir, "README.md"))
+          and '<script src="vendor/d3.min.js">' in html_text)
+finally:
+    shutil.rmtree(tmp2, ignore_errors=True)
+
+raised = False
+try:
+    write_mindmap("# R", os.path.join(tempfile.gettempdir(), "report.md"))
+except ValueError:
+    raised = True
+check("write_mindmap rejects a non-.html path (no silent source clobber) (#4/#5)", raised)
 
 print("\n=> ALL PASSED" if ok else "\n=> SOME FAILED")
 sys.exit(0 if ok else 1)

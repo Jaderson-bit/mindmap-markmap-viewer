@@ -3,15 +3,19 @@
 Reusable helpers to render and manipulate markmap.js mind maps from Markdown.
 
 Framework-agnostic:
-    build_html(src, height, background, vendor, toolbar)  -> offline HTML (white on dark)
-    write_mindmap(src, html_path)           -> write .md + .html + sibling vendor/ (portable)
+    build_html(src, ..., inline=True)       -> a SINGLE self-contained offline HTML (white on dark)
+    write_mindmap(src, html_path)           -> write .md + a self-contained .html (libs inlined)
     set_expand_level(src, level)            -> set initialExpandLevel in the frontmatter
     apply_presets(src, color, max_width)    -> fill default markmap options (no override)
     filter_markmap(src, query)              -> (filtered_src, n_matches); match + ancestors + descendants
     _norm(s)                                -> accent-insensitive, lowercased string
 
 Streamlit (optional):
-    render_markmap(src, height, background) -> embeds build_html() via st.components iframe
+    render_markmap(src, height, background, toolbar) -> embeds build_html() via st.components iframe
+
+Math note: LaTeX (`$...$` / `$$...$$`) is NOT rendered in the offline bundle --
+markmap's KaTeX plugin needs `window.katex`, which is not vendored. Math shows as
+plain text; everything else renders fully offline.
 """
 
 import html
@@ -29,14 +33,31 @@ _VENDOR_JS = ("d3.min.js", "markmap-view.min.js", "markmap-lib.min.js", "markmap
 _VENDOR_CSS = "markmap-toolbar.min.css"
 
 
-def _default_vendor_uri() -> str:
-    """file:// URI of this skill's bundled `assets/vendor/` directory.
+def _vendor_dir() -> Path:
+    """Path to this skill's bundled `assets/vendor/` directory."""
+    return Path(__file__).resolve().parent.parent / "assets" / "vendor"
 
-    Used as the default `vendor` prefix so a standalone build_html() call opens
-    offline on THIS machine with no extra setup ("referenciar localmente"). For a
-    portable/shareable bundle, write_mindmap() copies the folder next to the HTML
-    and you point `vendor` at the relative "vendor" path instead."""
-    return (Path(__file__).resolve().parent.parent / "assets" / "vendor").as_uri()
+
+def _default_vendor_uri() -> str:
+    """file:// URI of the bundled vendor dir (used only by the non-inline path)."""
+    return _vendor_dir().as_uri()
+
+
+def _read_vendor_inline():
+    """Read the vendored CSS + JS and return (style_tag, scripts_html) for
+    embedding directly in the page, so the generated HTML is a SINGLE
+    self-contained document that opens offline anywhere -- no sibling vendor/
+    folder, which is the #1 way a shared/moved map fails to load its libs.
+    The `</style` / `</script` end-tag tokens inside the libraries are broken with
+    a backslash so they can't terminate the embedding element early."""
+    d = _vendor_dir()
+    css = (d / _VENDOR_CSS).read_text(encoding="utf-8").replace("</style", "<\\/style")
+    style_tag = "<style>" + css + "</style>"
+    parts = []
+    for f in _VENDOR_JS:
+        js = (d / f).read_text(encoding="utf-8").replace("</script", "<\\/script")
+        parts.append("<script>" + js + "</script>")
+    return style_tag, "\n".join(parts)
 
 
 # --------------------------------------------------------------------------- #
@@ -164,16 +185,21 @@ _INIT_JS = r"""
 
 
 def build_html(src: str, height: int = 850, background: str = "#0e1117",
-               vendor: str = None, toolbar: bool = True) -> str:
+               vendor: str = None, toolbar: bool = True, inline: bool = True) -> str:
     """Return a self-contained HTML document that renders `src` as a markmap with
     a WHITE font, loading the markmap stack from LOCAL vendored files so the map
     opens OFFLINE -- no CDN, no network request.
 
-    `vendor` is the URL/path prefix for the `<script src>`/`<link>` tags. It
-    defaults to this skill's bundled `assets/vendor/` (a file:// URI), so a
-    standalone call works offline on this machine immediately. For a portable
-    bundle, pass a relative prefix (e.g. "vendor") and ship that folder beside the
-    HTML -- write_mindmap() does this for you.
+    `inline` (default True) embeds the vendored CSS + JS directly in the page, so
+    the result is a SINGLE file that opens anywhere -- shared, moved, or in a
+    viewer that can't resolve sibling paths. This is the robust default. Set
+    inline=False to instead reference the libs by URL/path via `vendor` (smaller
+    HTML, but the `vendor/` folder must travel with it).
+
+    `vendor` (only used when inline=False) is the prefix for the `<script src>` /
+    `<link>` tags. It defaults to this skill's bundled `assets/vendor/` (a file://
+    URI). For a portable non-inline bundle, pass a relative prefix (e.g. "vendor")
+    and ship that folder beside the HTML.
 
     `background` defaults to a dark color because the white font is INVISIBLE on a
     light surface. Standalone HTML opens on the browser's white default, so the
@@ -186,15 +212,19 @@ def build_html(src: str, height: int = 850, background: str = "#0e1117",
     (e.g. `</div>`, `List<String>`) from breaking out of the div and truncating
     the map. `toolbar=False` renders without the navigation toolbar.
     """
-    if vendor is None:
-        vendor = _default_vendor_uri()
-    vendor = str(vendor).rstrip("/")
     safe = html.escape(str(src), quote=False)
-    scripts = "\n".join('<script src="%s/%s"></script>' % (vendor, f) for f in _VENDOR_JS)
+    if inline:
+        head_css, scripts = _read_vendor_inline()
+    else:
+        if vendor is None:
+            vendor = _default_vendor_uri()
+        v = html.escape(str(vendor).rstrip("/"), quote=True)
+        head_css = f'<link rel="stylesheet" href="{v}/{_VENDOR_CSS}">'
+        scripts = "\n".join('<script src="%s/%s"></script>' % (v, f) for f in _VENDOR_JS)
     return (
         "<!doctype html>\n"
         '<meta charset="utf-8">\n'
-        f'<link rel="stylesheet" href="{vendor}/{_VENDOR_CSS}">\n'
+        f"{head_css}\n"
         "<style>\n"
         f"  html, body {{ margin:0; padding:0; background: {background}; }}\n"
         f"  #markmap {{ width:100%; height:{height - 12}px; display:block; }}\n"
@@ -212,45 +242,57 @@ def build_html(src: str, height: int = 850, background: str = "#0e1117",
     )
 
 
-def render_markmap(src: str, height: int = 850, background: str = "#0e1117"):
+def render_markmap(src: str, height: int = 850, background: str = "#0e1117",
+                   toolbar: bool = True):
     """Embed build_html() inside Streamlit (isolated iframe). The iframe carries
     its own dark background by default, so the map stays readable even under a
-    light Streamlit theme; pass background="transparent" to blend into a dark host."""
+    light Streamlit theme; pass background="transparent" to blend into a dark host.
+    The toolbar is included by default; pass toolbar=False to omit it. Libraries
+    are inlined, so the embed needs no external files."""
     import streamlit.components.v1 as components
-    components.html(build_html(src, height, background), height=height, scrolling=True)
+    components.html(build_html(src, height, background, toolbar=toolbar),
+                    height=height, scrolling=True)
 
 
 def write_mindmap(src: str, html_path, *, height: int = 850,
                   background: str = "#0e1117", toolbar: bool = True,
-                  copy_vendor: bool = True):
-    """Write a portable, offline mind map as a pair of files plus its libs:
+                  inline: bool = True):
+    """Write an offline mind map as a `.md` source plus its render:
 
         <name>.md    the editable Markdown -- the single source of truth
         <name>.html  the render (embeds the .md content at generation time)
-        vendor/      the markmap libs, copied beside the HTML so it opens offline
+        vendor/      ONLY when inline=False -- the libs, copied beside the HTML
+
+    With `inline` (default True) the HTML embeds the libraries, so it's a SINGLE
+    self-contained file that opens offline anywhere -- no `vendor/` folder to keep
+    alongside it. Set inline=False for a smaller HTML that references a sibling
+    `vendor/` folder instead (which must travel with it).
 
     Returns (md_path, html_path) as Path objects. To change the map, edit the
     `.md` and re-run -- the HTML carries no content of its own beyond what the
-    `.md` holds. The `.md` is plain Markdown (frontmatter + headings/lists), so it
-    also renders in any Markdown viewer. Set copy_vendor=False to skip copying and
-    fall back to this skill's own vendored libs via a file:// path."""
+    `.md` holds. `html_path` must end in .html/.htm (otherwise the derived .md
+    path could collide with it and silently clobber the source)."""
     html_path = Path(html_path)
+    if html_path.suffix.lower() not in (".html", ".htm"):
+        raise ValueError(
+            "html_path must end in .html or .htm (got %r)" % (html_path.name,))
     out_dir = html_path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
     md_path = html_path.with_suffix(".md")
     md_path.write_text(str(src), encoding="utf-8")
 
-    if copy_vendor:
-        bundled = Path(__file__).resolve().parent.parent / "assets" / "vendor"
-        shutil.copytree(bundled, out_dir / "vendor", dirs_exist_ok=True)
-        vendor = "vendor"  # the HTML references the copied folder relatively
+    if inline:
+        vendor = None  # libs are embedded; nothing to copy
     else:
-        vendor = None  # fall back to the skill's vendor dir (absolute file:// URI)
+        # copy only the libs the HTML references (skip vendor/README.md etc.)
+        shutil.copytree(_vendor_dir(), out_dir / "vendor", dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("*.md"))
+        vendor = "vendor"  # the HTML references the copied folder relatively
 
     html_path.write_text(
         build_html(src, height=height, background=background,
-                   vendor=vendor, toolbar=toolbar),
+                   vendor=vendor, toolbar=toolbar, inline=inline),
         encoding="utf-8")
     return md_path, html_path
 
@@ -286,10 +328,13 @@ def _set_markmap(src: str, key: str, value, *, override: bool) -> str:
     if _has_key(fm, key):
         if not override:
             return src  # author already set it -> leave untouched
-        # Rewrite the existing value in place (value runs to EOL, or to ',' / '}'
-        # in an inline mapping, so sibling keys are preserved).
-        new_fm = re.sub(rf"(?<![\w-]){re.escape(key)}\s*:\s*[^\n,}}]*",
-                        directive, fm, count=1)
+        # Rewrite the existing value in place. The value is a balanced [..] list or
+        # {..} map (which may contain commas), else a scalar that stops at ',' / '}'
+        # (inline mapping) or end-of-line (block) -- so sibling keys AND list values
+        # are both preserved.
+        new_fm = re.sub(
+            rf"(?<![\w-]){re.escape(key)}\s*:\s*(?:\[[^\]\n]*\]|\{{[^{{}}\n]*\}}|[^,}}\n]*)",
+            directive, fm, count=1)
         return new_fm + rest
 
     # key absent -> inject under a block-style `markmap:`, preserving indentation.
@@ -314,8 +359,15 @@ def _set_markmap(src: str, key: str, value, *, override: bool) -> str:
     if n:
         return new_fm + rest
 
-    # ... or, frontmatter without a markmap: key -> open a block inside the fence
-    # rather than stacking a second frontmatter document.
+    # A markmap: key exists but in a form we can't safely edit (e.g. an inline
+    # scalar like `markmap: foo`). Leave the source untouched rather than prepend a
+    # SECOND markmap: block -- markmap reads only the first, so duplicating it would
+    # silently drop settings.
+    if re.search(r"(?m)^[ \t]*markmap[ \t]*:", fm):
+        return src
+
+    # ... otherwise no markmap: key at all -> open a block inside the fence,
+    # not a stacked second frontmatter document.
     new_fm = re.sub(r"\A---\n", f"---\nmarkmap:\n  {directive}\n", fm, count=1)
     return new_fm + rest
 
@@ -327,15 +379,24 @@ def set_expand_level(src: str, level: int) -> str:
 
 
 def _count_nodes(src: str) -> int:
-    """Rough node count: heading + list-item lines in the body (excludes the
-    frontmatter). Used to size `initialExpandLevel` in apply_presets."""
+    """Rough node count: ATX headings + list items in the body (excludes the
+    frontmatter and fenced code blocks). Used only to size `initialExpandLevel` in
+    apply_presets, so it just needs to track what markmap actually renders as
+    nodes -- a real heading is `#`..`######` followed by a space/EOL (so `#hashtag`
+    doesn't count), and `#` inside a ``` / ~~~ code fence isn't a heading."""
     src = str(src)
     fm_match = re.match(r"\A---\n.*?\n---\n", src, re.DOTALL)
     body = src[fm_match.end():] if fm_match else src
     n = 0
+    in_fence = False
     for line in body.split("\n"):
         s = line.strip()
-        if s and (s.startswith("#") or _BULLET.match(line)):
+        if s.startswith("```") or s.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence or not s:
+            continue
+        if re.match(r"#{1,6}(\s|$)", s) or _BULLET.match(line):
             n += 1
     return n
 
