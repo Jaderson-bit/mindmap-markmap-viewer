@@ -1,6 +1,6 @@
 ---
 name: mindmap-markmap-viewer
-description: Generate and render interactive mind maps from hierarchical Markdown using markmap.js (white font, search that filters the tree to matches + ancestors + descendants, expand-by-level control). Use when the user wants to turn outline/hierarchical content into a navigable mind map, or asks for a "markmap"/"mindmap" view, optionally embedded in Streamlit.
+description: Turn Markdown outlines, notes, docs, or plans into an interactive mind map — a single self-contained HTML file that opens offline anywhere (markmap.js, white-on-dark, zoom/expand/export toolbar, search that keeps matches in context). Use whenever the user asks for a mind map, markmap, or concept map, wants to visualize or diagram the structure of a document or topic, summarize notes as a navigable tree, make an outline clickable or explorable, or embed such a map in Streamlit — even when they don't literally say 'mind map'.
 ---
 
 # Mindmap (markmap) Skill
@@ -13,6 +13,14 @@ source.md  ──►  filter / set expand level (Python)  ──►  build_html(
 ```
 
 Helper functions live in `scripts/render_markmap.py`; a minimal source file is in `assets/example.md`; regression tests are in `evals/`. Deeper docs: [`references/internals.md`](references/internals.md) (how the helpers work) and [`references/lessons.md`](references/lessons.md) (real-world lessons + the adversarial counter-review behind the current code).
+
+## When to use this skill
+
+- The user asks for a mind map, markmap, or concept map of anything.
+- Hierarchical content — an outline, notes, a plan, a document's structure, a taxonomy — should become navigable, scannable, or shareable.
+- A map must be sent to someone or opened with no setup: the output is one self-contained `.html` that works offline.
+- A mind map should be embedded in a Streamlit app.
+- An existing markmap renders blank, white-on-white, or truncated — this skill carries the known fixes (§2).
 
 ---
 
