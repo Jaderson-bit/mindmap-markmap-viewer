@@ -2,7 +2,7 @@
 
 A Claude Code skill that turns hierarchical Markdown into an **interactive SVG mind map** with [markmap.js](https://markmap.js.org/) — readable white-on-dark by default, with expand-by-level control and a search that filters the tree to matches **plus their ancestors and descendants** (so a hit always shows up in context, not floating alone). Works standalone or embedded in Streamlit.
 
-![Live demo — expand and collapse the mind map from the toolbar](assets/demo.gif)
+![Install the skill, ask Claude to turn an outline into a mind map, and open the interactive result](assets/demo.gif)
 
 ## Why this exists
 
