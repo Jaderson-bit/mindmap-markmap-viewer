@@ -4,6 +4,8 @@ A Claude Code skill that turns hierarchical Markdown into an **interactive SVG m
 
 ![Install the skill, ask Claude to turn an outline into a mind map, and open the interactive result](assets/demo.gif)
 
+**[▶ Live demo](https://jaderson-bit.github.io/mindmap-markmap-viewer/)** — an actual generated map, in your browser: pan, zoom, fold branches, export SVG/PNG. The page is one self-contained HTML file, exactly what the skill produces.
+
 ## Why this exists
 
 markmap renders a Markdown outline as a zoomable mind map, but three things need a layer on top to be genuinely usable:
