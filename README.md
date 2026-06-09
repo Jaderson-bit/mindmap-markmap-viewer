@@ -42,10 +42,14 @@ cp -r mindmap-markmap-viewer ~/.claude/skills/
 ## Usage
 
 ```python
-import sys; sys.path.insert(0, "scripts")
+import sys
+from pathlib import Path
+
+SKILL = Path.home() / ".claude" / "skills" / "mindmap-markmap-viewer"  # wherever you cloned it
+sys.path.insert(0, str(SKILL / "scripts"))
 from render_markmap import build_html, set_expand_level, filter_markmap
 
-src = open("assets/example.md", encoding="utf-8").read()
+src = (SKILL / "assets" / "example.md").read_text(encoding="utf-8")   # or your own outline
 # optional: src, n = filter_markmap(src, "branch b")   # search + keep context
 # optional: src = set_expand_level(src, -1)             # expand all
 open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
@@ -54,7 +58,7 @@ open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
 Inside Streamlit:
 
 ```python
-import sys; sys.path.insert(0, "scripts")
+sys.path.insert(0, str(SKILL / "scripts"))             # SKILL as above
 from render_markmap import render_markmap, set_expand_level
 render_markmap(set_expand_level(src, 2), height=850)
 ```

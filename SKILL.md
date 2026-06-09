@@ -93,15 +93,24 @@ When there is a query, keep only nodes that **match** + their **path to the root
 
 ## 5. Minimal usage
 
-The helpers live in `scripts/`, so put that directory on the import path first (point it at this skill's `scripts/` folder).
+The helpers live in this skill's `scripts/` directory — and the working directory is
+normally the **user's project, not this folder**, so a bare `"scripts"` on `sys.path`
+won't resolve. Build paths from the skill's base directory (the path announced when
+this skill loaded):
+
+```python
+import sys
+from pathlib import Path
+
+SKILL_DIR = Path(r"<this skill's base directory>")   # announced when the skill loaded
+sys.path.insert(0, str(SKILL_DIR / "scripts"))
+from render_markmap import write_mindmap, apply_presets, set_expand_level, filter_markmap
+```
 
 Single self-contained file (recommended) — writes the `.md` source of truth and a
 fully **inlined** `.html` that opens offline anywhere, with no sibling `vendor/`:
 ```python
-import sys; sys.path.insert(0, "scripts")
-from render_markmap import write_mindmap, apply_presets, set_expand_level, filter_markmap
-
-src = open("assets/example.md", encoding="utf-8").read()
+src = Path("outline.md").read_text(encoding="utf-8")  # the user's outline (sample: SKILL_DIR / "assets/example.md")
 src = apply_presets(src)                       # fill default markmap options (no override)
 # optional: src, n = filter_markmap(src, "branch b")   # search + keep context
 # optional: src = set_expand_level(src, -1)             # expand all
@@ -118,7 +127,7 @@ open("mindmap.html", "w", encoding="utf-8").write(build_html(src, height=850))
 
 Inside Streamlit:
 ```python
-import sys; sys.path.insert(0, "scripts")
+sys.path.insert(0, str(SKILL_DIR / "scripts"))       # SKILL_DIR as in the setup above
 from render_markmap import render_markmap, set_expand_level
 render_markmap(set_expand_level(src, level), height=850)
 ```
