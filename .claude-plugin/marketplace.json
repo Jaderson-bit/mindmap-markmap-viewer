@@ -1,0 +1,32 @@
+{
+  "name": "jaderson-bit",
+  "owner": {
+    "name": "Jaderson Vargas",
+    "email": "jadersonmv@gmail.com"
+  },
+  "metadata": {
+    "description": "Skills by Jaderson Vargas — interactive offline mind maps from Markdown with markmap.js."
+  },
+  "plugins": [
+    {
+      "name": "mindmap-markmap-viewer",
+      "source": "./",
+      "description": "Turn Markdown outlines, notes, docs, or plans into an interactive mind map — a single self-contained HTML file that opens offline anywhere (markmap.js, white-on-dark, zoom/expand/export toolbar, context-preserving search).",
+      "category": "productivity",
+      "homepage": "https://jaderson-bit.github.io/mindmap-markmap-viewer/",
+      "repository": "https://github.com/Jaderson-bit/mindmap-markmap-viewer",
+      "keywords": [
+        "mindmap",
+        "mind-map",
+        "markmap",
+        "markdown",
+        "visualization",
+        "outline",
+        "concept-map",
+        "offline-html",
+        "svg-export",
+        "streamlit"
+      ]
+    }
+  ]
+}
