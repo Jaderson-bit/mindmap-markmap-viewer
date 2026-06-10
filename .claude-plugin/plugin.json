@@ -1,0 +1,12 @@
+{
+  "name": "mindmap-markmap-viewer",
+  "description": "Turn Markdown outlines, notes, docs, or plans into an interactive mind map — a single self-contained HTML file that opens offline anywhere (markmap.js, white-on-dark, zoom/expand/export toolbar, context-preserving search).",
+  "version": "1.1.0",
+  "author": {
+    "name": "Jaderson Vargas",
+    "email": "jadersonmv@gmail.com"
+  },
+  "homepage": "https://jaderson-bit.github.io/mindmap-markmap-viewer/",
+  "repository": "https://github.com/Jaderson-bit/mindmap-markmap-viewer",
+  "license": "MIT"
+}
